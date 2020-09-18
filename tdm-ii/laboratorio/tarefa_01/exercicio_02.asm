@@ -18,8 +18,8 @@
 init:   MVI A, 20
         MVI R1, 30
         ADD R1
-        MOV M1, A
+        STA 4000h
         MVI R1, 10
         SUB R1
-        MOV M2, A
+        STA 4001h
         HLT

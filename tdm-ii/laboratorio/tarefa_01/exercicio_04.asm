@@ -21,5 +21,5 @@ init:   MVI R1, 6
         ADD R1
 loop:   DCR R2
         JNZ loop
-        MOV M2, A
+        STA 4000h
         HLT
