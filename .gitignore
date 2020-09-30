@@ -1,0 +1,10 @@
+# Arquivos de backup
+*.*~
+
+# Arquivos HEX
+*.hex
+
+# Arquivos do MCU 8051 IDEs
+*.adf
+*.bin
+*.lst
