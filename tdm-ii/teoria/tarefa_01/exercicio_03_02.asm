@@ -51,8 +51,6 @@ maior:  MOV 61h, 50h    ; Armazena o conteúdo de 50h (maior) em 61h
 menor:  MOV 61h, 51h    ; Armazena o conteúdo de 51h (maior) em 61h
         MOV 60h, 50h    ; Armazena o conteúdo de 50h (maior) em 60h
 
-        JMP $
-
 fim:    END             ; Termina o programa
 
 
