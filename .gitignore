@@ -9,3 +9,29 @@
 *.bin
 *.lst
 *.mcu8051ide
+*.vhc
+
+# Keil µVision
+*.uvgui*
+*.uvopt*
+*.uvproj*
+*.mcu8051ide
+Objects/
+    *uvision
+    *.m51
+Listings/
+    *.obj
+    *.htm
+    *.lnp
+
+
+# Compactados
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.tar.bz
+
+# Arquivos diversos
+outros/
+outros/*
