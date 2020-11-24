@@ -20,8 +20,8 @@
 ;   - Deve conter arquivos do Proteus, o *.ASM e o *.HEX
 ;  
 ;
-; Data de publicação:   19/11/2020
-; Data de entrega:      25/11/2020 às 20h30min
+; Data de publicação:       19/11/2020
+; Data de entrega (máx.):   25/11/2020 às 20h30min
 ;
 ;
 ;   MNEMÔNICOS              COMENTÁRIOS
@@ -41,31 +41,59 @@
                             ; drivers de dois displays de 7 segmentos
 
     MARCADOR    BIT 20h     ; Marcador de Temporizador
-                            ; SE MARCADOR = 1, ligar temporizador 1
-                            ; SENÃO, ligar temporizador 0
+                            ; SE MARCADOR = 0, contagem completa
+                            ; SE MARCADOR = 1, contagem de ajuste
 
 
     ; DADOS
     ; .....
 
-    REP_T       EQU 0Eh     ; Comparador de repetição dos ciclos
+    REP_T       EQU 0Fh     ; Comparador de repetição dos ciclos
     COMP_LSN    EQU 06h     ; Comparador do nibble menos significativo
     COMP_MSN    EQU 60h     ; Comparador do nibble menos significativo
-    TEMP_SWT    EQU 50h     ; Comparador de troca do temporizador ativo
 
-    CONTAR_H    EQU 0F0h    ; Período: 1 Hz -> T = 1s
-    CONTAR_L    EQU 00H     ; O C.M. é de ((1/12)×f) S, logo 1×10^6 C.M.
-                            ; são necessários para 1s. Assim, em 16bit,
-                            ; precisaria repetir o timer 14 vezes
-                            ; para f = 11.0592 MHz partindo de 0000h.
-                            ; E ainda 2^16 - 4096 = 61440 = F000h
-                            ; para o restante completar 1 s
+    AJUSTE_H    EQU 0BDh    ; THx do ajuste
+    AJUSTE_L    EQU 0C0h    ; TLx do ajuste
+                            ;
+                            ; Considerando:
+                            ; -- Contagem a cada 1 Hz (T = 1s)
+                            ; -- O C.M. é de (1/12)×f_cristal segundos,
+                            ; -- f_cristal = 12 MHz
+                            ;
+                            ; Assim, temos que 1×10^6 C.M. são necessá-
+                            ; rios para gerar 1 segundo.
+                            ;
+                            ; Em um timer de 16bits, serão necessárias
+                            ; 1M / (2^16) repetições do timer para gerar
+                            ; 1 segundo. Ou seja: 15 repetições de 16bit
+                            ; completas (THx = 00h e TLx = 00) mais um 
+                            ; ajuste.
+                            ;
+                            ; O ajuste é de 16960 ciclos. Assim, THx e
+                            ; TLx devem receber, repectivamente, o pri-
+                            ; meiro (mais significativo) e o segundo 
+                            ; byte (menos significativo) do resultado:
+                            ;
+                            ; (2^16) - 16960 = 48576 (ou 0BDC0h)
 
     DISPARO     EQU 05h     ; Define o disparo por borda na INT0 e INT1
-    INTERRUP    EQU 8Fh     ; Define as interrupções habilitadas
+                            ; IT0 = 1 e IT1 = 1 para borda de descida
+
+    INTERRUP    EQU 87h     ; Define as interrupções habilitadas p/ uso
+                            ; EA  = 1 habilita interrupções p/ uso
+                            ; EX0 = 1, EX1 = 1 habilita INT0 e INT1
+                            ; ET0 = 1, ET1 = 1 habilita o timer 0
+
     PILHA       EQU 2Fh     ; Define o endereço atual da pilha
-    TIMER       EQU 01h     ; Define os tipos de timer 
-    ZERAR       EQU 00h     ; Define valor de reinício
+                            ; Quando fizer uma operação de PUSH, o valor
+                            ; será jogado na RAM de Uso Geral a partir
+                            ; de 30h, poupando os registradores Rn
+
+    TIMER       EQU 11h     ; Define os tipos de timer
+                            ; M0 = 1 e M1 = 0 para timer de 16-bit
+                            ; (MODO 1) no Timer 0 e no Timer 1
+
+    ZERAR       EQU 00h     ; Define valor de reinício ou de zerar
 
 
 ; PROGRAMA
@@ -82,7 +110,7 @@ init:   JMP start           ; Inicia o programa
     ; .....................
 
     ORG 0003h
-inz:    CALL fniz           ; Chama a função da INT0
+inz:    SETB TR0            ; ... Liga Timer 0
 
         RETI                ; Retorna ao ponto de chamada da interrupção
 
@@ -91,9 +119,13 @@ inz:    CALL fniz           ; Chama a função da INT0
     ; ..............
 
     ORG 000Bh
-timez:  CALL fntz           ; Chama a função do Timer 0
-        
-        RETI                ; Retorna ao ponto de chamada da interrupção
+timez:  DJNZ R0, tcf        ; Verifica se repetiu o timer REP_T vezes
+
+                            ; SE o timer repetiu REP_T vezes:
+        ACALL fntajs        ; Chama a função de ajuste
+
+                            ; SENÃO:
+tcf:    RETI                ; Retorna ao ponto de chamada da interrupção
 
 
     ; Interrupção Externa 1
@@ -101,16 +133,6 @@ timez:  CALL fntz           ; Chama a função do Timer 0
     
     ORG 0013h
 inu:    CLR TR0             ; Desliga o Timer 0
-        CLR TR1             ; Desliga o Timer 1
-
-        RETI                ; Retorna ao ponto de chamada da interrupção
-
-
-    ; Temporizador 1
-    ; ..............
-
-    ORG 001Bh
-timeu:  CALL fntu           ; Chama a função do Timer 1
 
         RETI                ; Retorna ao ponto de chamada da interrupção
 
@@ -121,31 +143,24 @@ timeu:  CALL fntu           ; Chama a função do Timer 1
     ORG 0033h
 start:  MOV SP, #PILHA      ; Define a pilha para a RAM de Uso Geral
 
-    ; Marcador de timer
+                            ; Marcador de timer
         CLR MARCADOR        ; Inicializa o marcador
         MOV P1, #ZERAR      ; Inicializa a porta P1
 
-    ; Contagem de segundos e de ciclos
-        MOV R0, #ZERAR      ; Inicializa o contador de ciclos
+                            ; Contagens
+        MOV R0, #REP_T      ; Inicializa o contador de ciclos
         MOV R1, #ZERAR      ; Inicializa o contador de segundos;
 
-    ; Configuração de interrupções
-        MOV TMOD, #TIMER    ; M0 = 1 e M1 = 0 para timer de 16-bit
-                            ; (MODO 1) no Timer 0
-                            ; M0 = 0 e M1 = 0 para timer de 13-bit
-                            ; (MODO 0) no Timer 1
-        MOV TCON, #DISPARO  ; IT0 = 1, IT1 = 1 - Disparos por borda
+                            ; Configuração de interrupções
+        MOV TMOD, #TIMER    ; Define os tipos de timer
+        MOV TCON, #DISPARO  ; Tipo de disparo (sensibilidade)
 
-    ; Contagem do timer
+                            ; Contagem do timer
         MOV TH0, #ZERAR     ; Parte alta da contagem do timer 0
         MOV TL0, #ZERAR     ; Parte baixa da contagem do timer 0
-        MOV TH1, #CONTAR_H  ; Parte alta da contagem do timer 1
-        MOV TL1, #CONTAR_L  ; Parte baixa da contagem do timer 1
 
-    ; Habilitação de interrupções
-        MOV IE, #INTERRUP   ; EA  = 1 habilita interrupções
-                            ; EX0 = 1, EX1 = 1 habilita INT0 e INT1
-                            ; ET0 = 1, ET1 = 1 habilita os timers 0 e 1
+                            ; Habilitação de interrupções
+        MOV IE, #INTERRUP   ; Define as interrupções habilitadas p/ uso
 
 halt:   JMP halt            ; Trava o sistema, aguardando botões
 
@@ -153,41 +168,62 @@ halt:   JMP halt            ; Trava o sistema, aguardando botões
 ; SUBROTINAS & FUNÇÕES
 ; --------------------
 
-    ; Função de reset de estados
-    ; fnres significa "FuNção RESet"
+    ; Função de contagem de ajuste
+    ; fntajs significa "FuNção do Timer para AJuSte"
     ;
-fnres:  MOV IE, #ZERAR      ; Desativa interrupções
-        MOV TCON, #ZERAR    ; Limpa estado dos temporizadores
+fntajs: JBC MARCADOR, ajset ; Verifica se a primeira ou segunda execução
+                            ; do ajuste
 
-        RET                 ; Retorna ao ponto de chamada da função
+                            ; EXECUTADO SE reentrar no ajuste depois de
+                            ; terminar a contagem de ajuste
+
+                            ; Configura próximas iterações
+        MOV TH0, #ZERAR     ; Parte alta da contagem do timer de ajuste
+        MOV TL0, #ZERAR     ; Parte baixa da contagem do timer de ajuste
+        SETB MARCADOR       ; Configura para entrar no ajuste após 
+                            ; contar ciclos completos de 16 bits
+        MOV R0, #REP_T      ; Reinicia o contador de ciclos completos
+
+                            ; Verificação de estouro do cronômetro
+        INC R1              ; Incrementa o cronômetro
+        ACALL fnilsn        ; Chama IF para verificar se é xAh em R1
+        ACALL fnimsn        ; Chama IF para verificar se é Axh em R1
+
+                            ; Inverção de nibbles de dezena e unidade
+                            ; NOTA: Remover as chamadas a fninvn SE os 
+                            ; displays de 7 seg. estiverem ordenados OK
+        ACALL fninvn        ; Inverte os nibbles (limitação de hardware)
+        MOV LEDS, R1        ; Mostra o contador
+        ACALL fninvn        ; Desinverte os nibbles (para calcular)
+
+        JMP ajsf            ; Encerra a execução
+
+                            ; EXECUTADO SE entrar no ajuste depois de 
+                            ; realizar as contagens completas
+
+                            ; Prepara contagem de ajuste p/ 1s perfeito
+ajset:  MOV TH0, #AJUSTE_H  ; Parte alta da contagem do timer de ajuste
+        MOV TL0, #AJUSTE_L  ; Parte baixa da contagem do timer de ajuste
+
+                            ; Configura próximas iterações
+        INC R0              ; Garante a segunda execução do ajuste
+
+ajsf:   RET                 ; Retorna ao ponto de chamada da função
 
 
-    ; Função do temporizador 0
-    ; fntz significa "FuNção do Timer Zero"
-    ;
-fntz:   INC R0              ; Incrementa o contador de ciclos
-
-        CJNE R0, #REP_T, tzf; Verifica se repetiu REP_T vezes
-        SETB MARCADOR       ; Marca o temporizador 1 como alvo de START
-                            ; SE repetiu em eventual STOP
-        XRL TCON, #TEMP_SWT ; TR0 = 0, TR1 = 1 - SE repetiu
-
-tzf:    RET                 ; Retorna ao ponto de chamada da função
-
-
-    ; Função de um IF/ELSE lógico para nibbles
+    ; Função de um IF/ELSE lógico para nibbles menos significativos
     ; fnilsn significa "FuNção If Less Significant Nibble"
     ;
 fnilsn: MOV A, R1           ; Obtém possível valor xAh
         ADD A, #COMP_LSN    ; Verifica se é xAh
-        CPL AC              ; Inverte a lógica JBC aplicado a AC
-        JBC AC, ilsnf       ; SE AC for 0 ...
+        JNB AC, ilsnf       ; SE AC = 1 ...
         MOV R1, A           ; ... então temos xAh, corrige para (x+1)0h
 
+                            ; SE AC = 0 
 ilsnf:  RET                 ; Retorna ao ponto de chamada da função
 
 
-    ; Função de um IF/ELSE lógico para nibbles
+    ; Função de um IF/ELSE lógico para nibbles mais significativos
     ; fnilsn significa "FuNção If Most Significant Nibble"
     ;
 fnimsn: MOV A, R1           ; Obtém possível valor Axh
@@ -196,40 +232,6 @@ fnimsn: MOV A, R1           ; Obtém possível valor Axh
         MOV R1, A           ; ... então temos Axh, corrige para 0xh
 
 imsnf:  RET                 ; Retorna ao ponto de chamada da função
-
-
-    ; Função do temporizador 1
-    ; fntu significa "FuNção do Timer Um"
-    ;
-fntu:   CLR MARCADOR        ; Marca o temporizador 0 como alvo de START 
-                            ; em eventual STOP
-
-        XRL TCON, #TEMP_SWT ; TR0 = 1, TR1 = 0
-        MOV R0, #ZERAR      ; Reinicia o contador de ciclos (!!! ↑)
-
-        INC R1              ; Incrementa o cronômetro
-        CALL fnilsn         ; Chama IF para verificar se é xAh em R1
-        CALL fnimsn         ; Chama IF para verificar se é Axh em R1
-
-        CALL fninvn         ; Inverte os nibbles (limitação de hardware)
-        MOV LEDS, R1        ; Mostra o contador
-        CALL fninvn         ; Desinverte os nibbles (para calcular)
-
-        RET                 ; Retorna ao ponto de chamada da função
-
-
-    ; Função da INT0
-    ; fniz significa "FuNção da Interrupção Zero"
-    ;
-fniz:   JBC MARCADOR, tmrz  ; Liga o timer 1 se MARCADOR = 1
-
-        SETB TR0            ; ... Liga Timer 0
-        JMP fnizf           ; Termina a execução
-
-tmrz:   SETB TR1            ; ... Liga Timer 1
-        CPL MARCADOR        ; Desfaz o "CLR" de JBC em MARCADOR
-
-fnizf:  RET                 ; Retorna ao ponto de chamada da função
 
 
     ; Função de inversão de nibbles de um byte
