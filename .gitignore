@@ -2,7 +2,7 @@
 *.*~
 
 # Arquivos HEX
-*.hex
+# *.hex
 
 # Arquivos do MCU 8051 IDEs
 *.adf
