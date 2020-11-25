@@ -33,13 +33,15 @@
     ; PORTAS & ENDEREÇOS
     ; ..................
 
-    B1          BIT P3.2    ; Botão de início (START) - INT0 Borda
-    B2          BIT P3.3    ; Botão de parada (STOP) - INT1 Borda
+    B1          EQU P3.2    ; Botão de início (START) - INT0 Borda
+    B2          EQU P3.3    ; Botão de parada (STOP) - INT1 Borda
+                            ; Botão de reinício (RESTART) - Hardware RST
+                            ; Então não está presente.
 
     LEDS        EQU P1      ; LEDs que recebem a saída que servem aos 
                             ; drivers de dois displays de 7 segmentos
 
-    MARCADOR    BIT 20h     ; Marcador de Temporizador
+    MARCADOR    EQU 20h     ; Marcador de Temporizador
                             ; SE MARCADOR = 0, contagem completa
                             ; SE MARCADOR = 1, contagem de ajuste
 
@@ -148,7 +150,7 @@ start:  MOV SP, #PILHA      ; Define a pilha para a RAM de Uso Geral
 
                             ; Contagens
         MOV R0, #REP_T      ; Inicializa o contador de ciclos
-        MOV R1, #ZERAR      ; Inicializa o contador de segundos;
+        MOV A, #ZERAR       ; Inicializa o contador de segundos;
 
                             ; Configuração de interrupções
         MOV TMOD, #TIMER    ; Define os tipos de timer
@@ -183,15 +185,15 @@ fntajs: JBC MARCADOR, ajset ; Verifica se a primeira ou segunda execução
                             ; contar ciclos completos de 16 bits
         MOV R0, #REP_T      ; Reinicia o contador de ciclos completos
 
-                            ; Verificação de estouro do cronômetro
-        INC R1              ; Incrementa o cronômetro
-        MOV A, R1           ; Movimenta o cronômetro para o ACC
-        DA A                ; Ajusta para BCD o conteúdo do acumulador
-        MOV R1, A           ; Atualiza o cronômetro
+                            ; Atualização do cronômetro
+        INC A               ; Incrementa o cronômetro
+        DA A                ; Ajusta para BCD
+        MOV LEDS, A         ; Mostra o cronômetro
 
-                            ; Inverção de nibbles de dezena e unidade
-        MOV LEDS, R1        ; Mostra o contador
-
+                            ; Limpando o terreno para DA
+        CLR AC              ; Limpa o carry auxiliar
+        CLR CY              ; Limpa o carry
+        
         JMP ajsf            ; Encerra a execução
 
                             ; EXECUTADO SE entrar no ajuste depois de 
