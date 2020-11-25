@@ -35,7 +35,6 @@
 
     B1          BIT P3.2    ; Botão de início (START) - INT0 Borda
     B2          BIT P3.3    ; Botão de parada (STOP) - INT1 Borda
-    B3          BIT P2.0    ; Botão de reinício (RESTART) - Hardware RST
 
     LEDS        EQU P1      ; LEDs que recebem a saída que servem aos 
                             ; drivers de dois displays de 7 segmentos
@@ -186,15 +185,12 @@ fntajs: JBC MARCADOR, ajset ; Verifica se a primeira ou segunda execução
 
                             ; Verificação de estouro do cronômetro
         INC R1              ; Incrementa o cronômetro
-        ACALL fnilsn        ; Chama IF para verificar se é xAh em R1
-        ACALL fnimsn        ; Chama IF para verificar se é Axh em R1
+        MOV A, R1           ; Movimenta o cronômetro para o ACC
+        DA A                ; Ajusta para BCD o conteúdo do acumulador
+        MOV R1, A           ; Atualiza o cronômetro
 
                             ; Inverção de nibbles de dezena e unidade
-                            ; NOTA: Remover as chamadas a fninvn SE os 
-                            ; displays de 7 seg. estiverem ordenados OK
-        ACALL fninvn        ; Inverte os nibbles (limitação de hardware)
         MOV LEDS, R1        ; Mostra o contador
-        ACALL fninvn        ; Desinverte os nibbles (para calcular)
 
         JMP ajsf            ; Encerra a execução
 
@@ -209,39 +205,6 @@ ajset:  MOV TH0, #AJUSTE_H  ; Parte alta da contagem do timer de ajuste
         INC R0              ; Garante a segunda execução do ajuste
 
 ajsf:   RET                 ; Retorna ao ponto de chamada da função
-
-
-    ; Função de um IF/ELSE lógico para nibbles menos significativos
-    ; fnilsn significa "FuNção If Less Significant Nibble"
-    ;
-fnilsn: MOV A, R1           ; Obtém possível valor xAh
-        ADD A, #COMP_LSN    ; Verifica se é xAh
-        JNB AC, ilsnf       ; SE AC = 1 ...
-        MOV R1, A           ; ... então temos xAh, corrige para (x+1)0h
-
-                            ; SE AC = 0 
-ilsnf:  RET                 ; Retorna ao ponto de chamada da função
-
-
-    ; Função de um IF/ELSE lógico para nibbles mais significativos
-    ; fnilsn significa "FuNção If Most Significant Nibble"
-    ;
-fnimsn: MOV A, R1           ; Obtém possível valor Axh
-        ADD A, #COMP_MSN    ; Verifica se é Axh
-        JNC imsnf           ; SE CY for 0 ...
-        MOV R1, A           ; ... então temos Axh, corrige para 0xh
-
-imsnf:  RET                 ; Retorna ao ponto de chamada da função
-
-
-    ; Função de inversão de nibbles de um byte
-    ; fninvn significa "FuNção INVerte Nibbles"
-    ;
-fninvn: MOV A, R1           ; Coloca o cronômetro no acumulador
-        SWAP A              ; Inverte os nibbles do acumulador
-        MOV R1, A           ; Atualiza o cronômetro para 
-
-        RET                 ; Retorna ao ponto de chamada da função
 
 
 ; FIM
